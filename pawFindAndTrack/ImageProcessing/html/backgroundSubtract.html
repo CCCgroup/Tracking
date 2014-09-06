@@ -1,0 +1,629 @@
+
+<!DOCTYPE html
+  PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head>
+      <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+   <!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      --><title>backgroundSubtract</title><meta name="generator" content="MATLAB 7.13"><link rel="schema.DC" href="http://purl.org/dc/elements/1.1/"><meta name="DC.date" content="2012-06-05"><meta name="DC.source" content="backgroundSubtract.m"><style type="text/css">
+
+body {
+  background-color: white;
+  margin:10px;
+}
+
+h1 {
+  color: #990000; 
+  font-size: x-large;
+}
+
+h2 {
+  color: #990000;
+  font-size: medium;
+}
+
+/* Make the text shrink to fit narrow windows, but not stretch too far in 
+wide windows. */ 
+p,h1,h2,div.content div {
+  max-width: 600px;
+  /* Hack for IE6 */
+  width: auto !important; width: 600px;
+}
+
+pre.codeinput {
+  background: #EEEEEE;
+  padding: 10px;
+}
+@media print {
+  pre.codeinput {word-wrap:break-word; width:100%;}
+} 
+
+span.keyword {color: #0000FF}
+span.comment {color: #228B22}
+span.string {color: #A020F0}
+span.untermstring {color: #B20000}
+span.syscmd {color: #B28C00}
+
+pre.codeoutput {
+  color: #666666;
+  padding: 10px;
+}
+
+pre.error {
+  color: red;
+}
+
+p.footer {
+  text-align: right;
+  font-size: xx-small;
+  font-weight: lighter;
+  font-style: italic;
+  color: gray;
+}
+
+  </style></head><body><div class="content"><pre class="codeinput"><span class="keyword">function</span> [frames,backImg,elements, files] = backgroundSubtract(folder)
+<span class="comment">%</span>
+<span class="comment">%function [frames,backImg,elements, files] = backgroundSubtract(folder, lasso_select_threshold_to_zero)</span>
+<span class="comment">%</span>
+
+
+<span class="comment">% pixel_intensity_threshold=150;</span>
+
+disp(<span class="string">'Performing background subtraction on images in folder: '</span>)
+disp([<span class="string">'     '</span> folder])
+
+<span class="keyword">try</span>
+    <span class="keyword">if</span>(exist(<span class="string">'imageStorage.mat'</span>,<span class="string">'file'</span>))
+
+      load(strcat(folder,filesep, <span class="string">'imageStorage.mat'</span>));
+      frames=length(frames);
+
+    <span class="keyword">elseif</span>(exist(<span class="string">'bufferReady.mat'</span>,<span class="string">'file'</span>))
+
+         <span class="keyword">try</span>
+          load(strcat(folder,filesep, <span class="string">'bufferReady.mat'</span>))
+        <span class="keyword">catch</span>
+          load <span class="string">bufferReady</span>;
+         <span class="keyword">end</span>
+
+         frames = size(bufferReady,2);
+
+    <span class="keyword">else</span>
+
+      strip_buffer_times(); <span class="comment">% this function call will create bufferready.mat if timestamps are present in tif files</span>
+      <span class="keyword">try</span>
+          load(strcat(folder, filesep, <span class="string">'bufferReady.mat'</span>))
+      <span class="keyword">catch</span>
+          load <span class="string">bufferReady</span>;
+      <span class="keyword">end</span>
+          frames = size(bufferReady,2);
+
+    <span class="keyword">end</span>
+
+
+
+    <span class="keyword">catch</span>
+   disp(<span class="string">'ERROR: could not load bufferReady. Are images present?'</span>);
+   <span class="keyword">return</span>;
+<span class="keyword">end</span>
+
+disp([<span class="string">'Total number of image files according to "bufferReady.mat or imageStorage.mat": '</span> int2str(frames)])
+
+clear <span class="string">bufferReady</span>
+
+diffs = zeros(frames-1,1);
+
+<span class="comment">% sort filenames in current directory</span>
+
+dirstruct = dir(folder);
+
+[sorted_names,sorted_index] = sortrows({dirstruct.name}');
+
+<span class="comment">%Then eliminate all but the .tif files</span>
+filecount = 0;
+fileindices = [];
+<span class="keyword">for</span> i=1:length(sorted_names)
+    <span class="keyword">if</span> ~isdir(sorted_names{i})
+        [~, ~, ext] = fileparts(sorted_names{i});
+
+        <span class="keyword">if</span> (strcmp(ext,<span class="string">'.tif'</span>))
+            filecount = filecount+1;
+            fileindices = [fileindices i];
+        <span class="keyword">end</span>
+    <span class="keyword">end</span>
+<span class="keyword">end</span>
+
+<span class="keyword">if</span> filecount &gt; 0
+    files = cell(filecount,1);
+    <span class="keyword">for</span> i=1:filecount
+        files{i} = sorted_names{fileindices(i)};
+    <span class="keyword">end</span>
+<span class="keyword">else</span>
+    files = {};
+<span class="keyword">end</span>
+
+nums_after_img=zeros(1,length(files));
+
+<span class="keyword">for</span> i=1:length(files)
+
+    <span class="comment">%find img and .tif end and start</span>
+    loc1=findstr(files{i},<span class="string">'g'</span>);
+    loc2=findstr(files{i},<span class="string">'.'</span>);
+
+    <span class="comment">%store filestring in tmp variable and convert to double</span>
+    tmp=files{i};
+    nums_after_img(1,i)=str2double(tmp(loc1+1:loc2-1));
+
+<span class="keyword">end</span>
+
+
+filesnew=[char(files) nums_after_img'];
+
+char_size=size(filesnew,2);
+
+filesnew=sortrows(filesnew,char_size);
+
+files=cellstr(filesnew(:,1:char_size-1));
+
+size(files)
+
+disp(<span class="string">'Establishing inter-image change threshold...'</span>)
+
+<span class="comment">%flag = 0;</span>
+
+<span class="keyword">for</span> n = 2:frames
+
+    <span class="keyword">if</span> mod(n,100) == 0
+        disp([<span class="string">'Working on frames '</span> int2str(n-1) <span class="string">' and '</span> int2str(n) <span class="string">'.'</span>])
+    <span class="keyword">end</span>
+
+<span class="comment">%     try</span>
+    img1 = (imread(files{n}));
+
+    img1 = imadjust(img1, [.08,.6],[0,1]);
+<span class="comment">%     [img1,~,~] = func_denoise_dw2d(img1);</span>
+
+    img2 = (imread(files{n-1}));
+
+    img2 = imadjust(img2, [.08,.6],[0,1]);
+<span class="comment">%     [img2,~,~] = func_denoise_dw2d(img2);</span>
+
+    img1 = double(img1);
+    img2 = double(img2);
+
+
+    theChange = sum(sum(abs(img1 - img2)));
+
+    diffs(n-1) = theChange;
+<span class="comment">%     catch</span>
+<span class="comment">%         %if flag == 0</span>
+<span class="comment">%             %flag = 1;</span>
+<span class="comment">%             disp(['     ERROR: image does not exist!'])</span>
+<span class="comment">%             frames = n-1;</span>
+<span class="comment">%         %end</span>
+<span class="comment">%         break</span>
+<span class="comment">%     end</span>
+
+<span class="keyword">end</span>
+
+average = mean(diffs);
+sigma   =  std(diffs);
+
+disp(<span class="string">'Rendering background image...'</span>)
+
+imgDims = size(img1);
+
+backImg = zeros(imgDims);
+
+imageCount = 0;
+elements   = [];
+
+<span class="keyword">for</span> n = 2:frames
+
+   img1 = (imread(files{n}));
+
+<span class="comment">%     img1 = imadjust(img1, [.08,.6],[0,1]);</span>
+<span class="comment">%      [img1,~,~] = func_denoise_dw2d(img1);</span>
+<span class="comment">%</span>
+    img2 = (imread(files{n-1}));
+
+<span class="comment">%     img2 = imadjust(img2, [.08,.6],[0,1]);</span>
+<span class="comment">%     [img2,~,~] = func_denoise_dw2d(img2);</span>
+    img1 = double(img1);
+    img2 = double(img2);
+
+
+<span class="comment">%     img1_intensity_threshold=mean(mean(img1)) +2*std(std(img1));</span>
+<span class="comment">%     img2_intensity_threshold=mean(mean(img2)) +2*std(std(img2));</span>
+<span class="comment">%</span>
+<span class="comment">%      img1(img1&gt;img1_intensity_threshold)=0;</span>
+<span class="comment">%      img2(img2&gt;img2_intensity_threshold)=0;</span>
+
+
+    theChange = sum(sum(abs(img1 - img2)));
+
+    <span class="keyword">if</span> theChange &gt; (average + (1 * sigma))
+
+        disp([<span class="string">'Including frame #'</span> int2str(n)]);
+
+        imageCount = imageCount + 1;
+        backImg    = ((1/imageCount) .* img2) + (((imageCount - 1)/imageCount) .* backImg);
+        elements = [elements ; n];
+
+    <span class="keyword">end</span>
+
+<span class="keyword">end</span>
+
+disp([<span class="string">'Images used for background image: '</span> int2str(imageCount) <span class="string">' out of '</span> int2str(frames)])
+
+disp(<span class="string">'Saving new images in: '</span>)
+disp([<span class="string">'     '</span> folder filesep <span class="string">'Paws'</span>]);
+
+mkdir(folder,<span class="string">'Paws'</span>);
+
+<span class="comment">%  % using lasso tool to select</span>
+
+<span class="comment">%  if(lasso_select_threshold_to_zero)</span>
+<span class="comment">%     figure;</span>
+<span class="comment">%     imagesc(backImg);</span>
+<span class="comment">%     colormap(gray);</span>
+<span class="comment">% %     errordlg('select head region showing flicker');</span>
+<span class="comment">% %     axes(h2);</span>
+<span class="comment">%     [pind,xs,ys] = lasso('selectionmode','lasso');</span>
+<span class="comment">%</span>
+<span class="comment">%     BW = poly2mask(xs,ys,size(backImg, 1),size(backImg, 2));</span>
+<span class="comment">%     hold on;</span>
+<span class="comment">%     plot(xs,ys,'r');</span>
+<span class="comment">%     pause(2);</span>
+<span class="comment">%     close(gcf);</span>
+<span class="comment">% %     close(h2);</span>
+<span class="comment">%  end</span>
+    <span class="comment">%%%% end select region in frames to set to zero</span>
+
+<span class="keyword">for</span> n = 1:frames
+
+
+    <span class="keyword">if</span> mod(n,100) == 0
+        disp([<span class="string">'Number of frames processed: '</span> int2str(n) <span class="string">' out of '</span> int2str(frames)])
+    <span class="keyword">end</span>
+
+ img = (imread(files{n}));
+
+<span class="comment">%  if(lasso_select_threshold_to_zero)</span>
+<span class="comment">%     mn=(mean(double(img(BW))));</span>
+<span class="comment">%     std=(std(double(img(BW))));</span>
+<span class="comment">%</span>
+<span class="comment">%     tmp=img(BW);</span>
+<span class="comment">%     tmp(tmp&gt;(mn+2*std))=0;</span>
+<span class="comment">%     img(BW)=tmp;</span>
+<span class="comment">%  end</span>
+
+
+disp(<span class="string">'Thresholds:******************************8'</span>);
+
+
+    std_img = std(double(img));
+    std_img=std(std_img);
+    img_intensity_threshold=mean(mean(img)) +6*std_img;
+    img(img&gt;img_intensity_threshold)=0;<span class="comment">%was commented out</span>
+
+    img = double(img);
+
+    img = img - backImg;
+
+    img = round(2 .* img);
+
+    <span class="keyword">for</span> k = 1:imgDims(1)
+        <span class="keyword">for</span> m = 1:imgDims(2)
+            <span class="keyword">if</span> sign(img(k,m)) == -1
+                img(k,m) = 0;
+            <span class="keyword">end</span>
+        <span class="keyword">end</span>
+    <span class="keyword">end</span>
+
+    img = uint8(img);
+
+    imwrite(img,[folder filesep <span class="string">'Paws'</span> filesep <span class="string">'paws'</span> int2str(n-1) <span class="string">'.tif'</span>],<span class="string">'TIFF'</span>);
+
+<span class="keyword">end</span>
+
+
+disp([<span class="string">'All '</span> int2str(frames) <span class="string">' images saved.'</span>])
+disp(<span class="string">'Saving background image as:'</span>)
+disp([<span class="string">'     '</span> folder filesep <span class="string">'Paws'</span> filesep <span class="string">'backImg.tif'</span>])
+disp([<span class="string">'     '</span> folder filesep <span class="string">'Paws'</span> filesep <span class="string">'backImg.mat'</span>])
+
+imwrite(uint8(round(backImg)), [folder filesep <span class="string">'Paws'</span> filesep <span class="string">'backImg.tif'</span>], <span class="string">'TIFF'</span>);
+save([folder filesep <span class="string">'Paws'</span>  filesep <span class="string">'backImg.mat'</span>],<span class="string">'backImg'</span>);
+
+disp(<span class="string">'Background subtraction done.'</span>)
+</pre><pre class="codeoutput">Performing background subtraction on images in folder: 
+</pre><pre class="codeoutput">Error using backgroundSubtract (line 10)
+Not enough input arguments.
+</pre><p class="footer"><br>
+      Published with MATLAB&reg; 7.13<br></p></div><!--
+##### SOURCE BEGIN #####
+function [frames,backImg,elements, files] = backgroundSubtract(folder)
+%
+%function [frames,backImg,elements, files] = backgroundSubtract(folder, lasso_select_threshold_to_zero)
+%
+
+
+% pixel_intensity_threshold=150;
+
+disp('Performing background subtraction on images in folder: ')
+disp(['     ' folder])
+
+try
+    if(exist('imageStorage.mat','file'))
+    
+      load(strcat(folder,filesep, 'imageStorage.mat'));
+      frames=length(frames);
+    
+    elseif(exist('bufferReady.mat','file'))
+      
+         try
+          load(strcat(folder,filesep, 'bufferReady.mat'))
+        catch
+          load bufferReady;
+         end
+         
+         frames = size(bufferReady,2);
+      
+    else
+        
+      strip_buffer_times(); % this function call will create bufferready.mat if timestamps are present in tif files
+      try
+          load(strcat(folder, filesep, 'bufferReady.mat'))
+      catch
+          load bufferReady;
+      end
+          frames = size(bufferReady,2);
+      
+    end
+    
+  
+    
+    catch
+   disp('ERROR: could not load bufferReady. Are images present?');
+   return;
+end
+
+disp(['Total number of image files according to "bufferReady.mat or imageStorage.mat": ' int2str(frames)])
+
+clear bufferReady
+
+diffs = zeros(frames-1,1);
+
+% sort filenames in current directory
+
+dirstruct = dir(folder);
+
+[sorted_names,sorted_index] = sortrows({dirstruct.name}');
+
+%Then eliminate all but the .tif files
+filecount = 0;
+fileindices = [];
+for i=1:length(sorted_names)
+    if ~isdir(sorted_names{i})
+        [~, ~, ext] = fileparts(sorted_names{i});
+        
+        if (strcmp(ext,'.tif'))
+            filecount = filecount+1;
+            fileindices = [fileindices i];
+        end
+    end
+end
+
+if filecount > 0
+    files = cell(filecount,1);
+    for i=1:filecount
+        files{i} = sorted_names{fileindices(i)};
+    end
+else
+    files = {};
+end
+
+nums_after_img=zeros(1,length(files));
+
+for i=1:length(files)
+    
+    %find img and .tif end and start
+    loc1=findstr(files{i},'g');
+    loc2=findstr(files{i},'.');
+    
+    %store filestring in tmp variable and convert to double
+    tmp=files{i};
+    nums_after_img(1,i)=str2double(tmp(loc1+1:loc2-1));
+   
+end
+    
+
+filesnew=[char(files) nums_after_img'];
+
+char_size=size(filesnew,2);  
+
+filesnew=sortrows(filesnew,char_size);
+
+files=cellstr(filesnew(:,1:char_size-1));
+
+size(files)
+
+disp('Establishing inter-image change threshold...')
+
+%flag = 0;
+
+for n = 2:frames
+    
+    if mod(n,100) == 0
+        disp(['Working on frames ' int2str(n-1) ' and ' int2str(n) '.'])
+    end
+    
+%     try
+    img1 = (imread(files{n}));
+    
+    img1 = imadjust(img1, [.08,.6],[0,1]);
+%     [img1,~,~] = func_denoise_dw2d(img1);
+    
+    img2 = (imread(files{n-1}));
+
+    img2 = imadjust(img2, [.08,.6],[0,1]);
+%     [img2,~,~] = func_denoise_dw2d(img2);
+
+    img1 = double(img1);
+    img2 = double(img2);
+
+  
+    theChange = sum(sum(abs(img1 - img2)));
+    
+    diffs(n-1) = theChange;
+%     catch
+%         %if flag == 0
+%             %flag = 1;
+%             disp(['     ERROR: image does not exist!'])
+%             frames = n-1;
+%         %end
+%         break
+%     end
+    
+end
+
+average = mean(diffs);
+sigma   =  std(diffs);
+
+disp('Rendering background image...')
+
+imgDims = size(img1);
+
+backImg = zeros(imgDims);
+
+imageCount = 0;
+elements   = [];
+
+for n = 2:frames
+    
+   img1 = (imread(files{n}));
+    
+%     img1 = imadjust(img1, [.08,.6],[0,1]);
+%      [img1,~,~] = func_denoise_dw2d(img1);
+%     
+    img2 = (imread(files{n-1}));
+
+%     img2 = imadjust(img2, [.08,.6],[0,1]);
+%     [img2,~,~] = func_denoise_dw2d(img2);
+    img1 = double(img1);
+    img2 = double(img2);
+    
+    
+%     img1_intensity_threshold=mean(mean(img1)) +2*std(std(img1));
+%     img2_intensity_threshold=mean(mean(img2)) +2*std(std(img2));
+%     
+%      img1(img1>img1_intensity_threshold)=0;
+%      img2(img2>img2_intensity_threshold)=0;
+  
+    
+    theChange = sum(sum(abs(img1 - img2)));
+    
+    if theChange > (average + (1 * sigma))
+        
+        disp(['Including frame #' int2str(n)]);
+        
+        imageCount = imageCount + 1;
+        backImg    = ((1/imageCount) .* img2) + (((imageCount - 1)/imageCount) .* backImg);
+        elements = [elements ; n];
+        
+    end
+    
+end
+
+disp(['Images used for background image: ' int2str(imageCount) ' out of ' int2str(frames)])
+
+disp('Saving new images in: ')
+disp(['     ' folder filesep 'Paws']);
+
+mkdir(folder,'Paws');
+
+%  % using lasso tool to select
+
+%  if(lasso_select_threshold_to_zero)
+%     figure;
+%     imagesc(backImg);
+%     colormap(gray);
+% %     errordlg('select head region showing flicker');
+% %     axes(h2);
+%     [pind,xs,ys] = lasso('selectionmode','lasso');
+% 
+%     BW = poly2mask(xs,ys,size(backImg, 1),size(backImg, 2));
+%     hold on;
+%     plot(xs,ys,'r');
+%     pause(2);
+%     close(gcf);
+% %     close(h2);
+%  end
+    %%%% end select region in frames to set to zero
+
+for n = 1:frames
+
+    
+    if mod(n,100) == 0
+        disp(['Number of frames processed: ' int2str(n) ' out of ' int2str(frames)])
+    end
+    
+ img = (imread(files{n}));
+     
+%  if(lasso_select_threshold_to_zero)
+%     mn=(mean(double(img(BW))));
+%     std=(std(double(img(BW))));
+% 
+%     tmp=img(BW);
+%     tmp(tmp>(mn+2*std))=0;
+%     img(BW)=tmp;
+%  end
+
+
+disp('Thresholds:******************************8');
+    
+
+    std_img = std(double(img));
+    std_img=std(std_img);
+    img_intensity_threshold=mean(mean(img)) +6*std_img;
+    img(img>img_intensity_threshold)=0;%was commented out
+    
+    img = double(img);
+    
+    img = img - backImg;
+    
+    img = round(2 .* img);
+    
+    for k = 1:imgDims(1)
+        for m = 1:imgDims(2)
+            if sign(img(k,m)) == -1
+                img(k,m) = 0;
+            end
+        end
+    end
+    
+    img = uint8(img);
+    
+    imwrite(img,[folder filesep 'Paws' filesep 'paws' int2str(n-1) '.tif'],'TIFF');
+    
+end
+
+
+disp(['All ' int2str(frames) ' images saved.'])
+disp('Saving background image as:')
+disp(['     ' folder filesep 'Paws' filesep 'backImg.tif'])
+disp(['     ' folder filesep 'Paws' filesep 'backImg.mat'])
+
+imwrite(uint8(round(backImg)), [folder filesep 'Paws' filesep 'backImg.tif'], 'TIFF');
+save([folder filesep 'Paws'  filesep 'backImg.mat'],'backImg');
+
+disp('Background subtraction done.')
+
+
+
+
+
+##### SOURCE END #####
+--></body></html>
